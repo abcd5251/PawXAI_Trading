@@ -1,8 +1,10 @@
 # ingest_api.py
 import json 
+import os
 import asyncio
 from fastapi import FastAPI, Request, BackgroundTasks
 import uvicorn
+import httpx
 from processor import analyze_description
 from bot import (
     notify_ingest_analysis,
@@ -12,6 +14,29 @@ from bot import (
 )
 
 app = FastAPI()
+
+# WWW Optional: push each event to an external webhook (e.g., n8n)
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+_wh_client = None
+
+async def _get_wh_client() -> httpx.AsyncClient:
+    global _wh_client
+    if _wh_client is None:
+        _wh_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(5.0),
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=100),
+        )
+    return _wh_client
+
+async def emit_webhook(event: str, payload: dict) -> None:
+    if not WEBHOOK_URL:
+        return
+    try:
+        client = await _get_wh_client()
+        body = {"event": event, "payload": payload}
+        await client.post(WEBHOOK_URL, json=body)
+    except Exception as e:
+        print(f"Webhook error: {e}")
 
 
 def _norm(value):
@@ -66,6 +91,9 @@ async def ingest(req: Request, background_tasks: BackgroundTasks):
         # 1) Send source notification immediately via event-loop task
         asyncio.create_task(notify_ingest_source_async(filtered))
 
+        # WWW Webhook part Also emit webhook with raw source webhook part
+        asyncio.create_task(emit_webhook("source", filtered))
+
         # 2) Offload analysis to thread executor to keep loop responsive
         loop = asyncio.get_running_loop()
         analysis = await loop.run_in_executor(None, analyze_description, text_to_analyze)
@@ -73,6 +101,9 @@ async def ingest(req: Request, background_tasks: BackgroundTasks):
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         # Schedule analysis notification asynchronously
         asyncio.create_task(notify_ingest_analysis_async(analysis, filtered))
+
+        # WWW Webhook part Also emit webhook with analysis + source
+        asyncio.create_task(emit_webhook("analysis", payload))
 
         # 3) Return HTTP with analysis and filtered source
         return {"ok": True, "data": analysis, "source": filtered}
