@@ -1,0 +1,1 @@
+KOL_LIST="gogo_allen15,dynavest_ai"

@@ -15,3 +15,8 @@ Check Python version
 which python3                   
 python3 --version       
 ```
+
+# Execution
+```bash
+uvicorn server:app --host 0.0.0.0 --port 8000
+```

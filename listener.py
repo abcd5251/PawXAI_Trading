@@ -11,14 +11,16 @@ load_dotenv()
 
 # Optional: limit to specific channels (replace with your channel IDs)
 # Use integers for channel IDs to match Discord's types
-# Broadcast [text] channel you mentioned
-TARGET_CHANNEL_IDS = {
-    int(os.getenv("CHANNEL_ID"))
-}
+# Robust parsing: if CHANNEL_ID is missing/invalid, don't filter (empty set)
+_channel_env = os.getenv("CHANNEL_ID")
+try:
+    TARGET_CHANNEL_IDS = {int(_channel_env)} if _channel_env and _channel_env.strip() else set()
+except Exception:
+    TARGET_CHANNEL_IDS = set()
 
 # Optional: forward each message to your HTTP endpoint
-# Defaults to local FastAPI server if env var not set
-FORWARD_URL = os.getenv("FORWARD_URL", "http://localhost:8000/ingest")
+# Default to container port if FORWARD_URL not set (Render uses $PORT)
+FORWARD_URL = os.getenv("FORWARD_URL") or f"http://localhost:{os.getenv('PORT', '8000')}/ingest"
 
 intents = discord.Intents.default()
 intents.message_content = True  # REQUIRED to read message content
