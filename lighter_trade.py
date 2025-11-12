@@ -18,14 +18,13 @@ ACCOUNT_INDEX = 453
 API_KEY_INDEX = 3
 
 # Trading configuration
-SYMBOL = "ETH"       # Change your Symbol
-INPUT_AMOUNT = 100   # USD notional to buy/sell
+SYMBOL = "BTC"       # Change your Symbol
+INPUT_AMOUNT = 100  # USD margin to allocate
 IS_ASK = False    # False=BUY(long), True=SELL(short);
 TP_PCT = 0.01        # 1% take-profit
 SL_PCT = 0.01        # 1% stop-loss
 # Notional-based sizing and leverage
-NOTIONAL_USD = 100.0  # Buy $100 worth of SOL
-LEVERAGE = 20         # Target leverage 2x
+LEVERAGE = 5         # Target leverage 2x
 MARGIN_MODE = "cross" # Margin mode for leverage updates, if supported
 
 
@@ -467,35 +466,24 @@ async def main():
 
         try:
             ext_usd = await _get_external_price_usd(SYMBOL)
-            entry_estimate = int(round(ext_usd * float(price_scale)))  # avg_execution_price 基於現價，不加滑點
         except Exception as e:
             logging.warning(f"Error :", e)
+            ext_usd = None
 
+        # Treat INPUT_AMOUNT as desired margin; size notional = margin * leverage
+        usd_margin = float(INPUT_AMOUNT)
+        usd_notional = usd_margin * float(LEVERAGE)
 
+        # Compute robust order params using order book metadata
+        market_idx2, base_amount_int, entry_estimate = await compute_order_params(
+            SYMBOL, usd_notional, api_client
+        )
+
+        # Recompute TP/SL off the computed entry estimate
         tp_trigger = int(entry_estimate * (1 + TP_PCT))
         sl_trigger = int(entry_estimate * (1 - SL_PCT))
-        logging.info(f"TP={tp_trigger} (+{int(TP_PCT*100)}%), SL={sl_trigger} (-{int(SL_PCT*100)}%)")
-
-        try:
-            min_base_amount_int = int(math.ceil(float(min_base_amount) * base_scale)) if min_base_amount is not None else 1
-        except Exception:
-            min_base_amount_int = 1
-        try:
-            min_quote_amount_int = int(math.ceil(float(min_quote_amount) * (int(10 ** int(quote_decimals)) if quote_decimals is not None else price_scale))) if min_quote_amount is not None else 0
-        except Exception:
-            min_quote_amount_int = 0
-
-        usd_notional = float(INPUT_AMOUNT)
-        base_amount_float = usd_notional / max(ext_usd, 1e-12)
-
-        base_amount_int = max(int(math.floor(base_amount_float * float(base_scale))), int(min_base_amount_int))
-        if lot_size_int and int(lot_size_int) > 1:
-            base_amount_int = max(int(min_base_amount_int), (base_amount_int // int(lot_size_int)) * int(lot_size_int))
-
         logging.info(
-            f"Sizing: symbol={SYMBOL}, notional=${usd_notional}, size_decimals={size_decimals}, price_decimals={price_decimals}, "
-            f"base_scale={base_scale}, price_scale={price_scale}, lot_size_int={lot_size_int}, min_base_amount_int={min_base_amount_int}, "
-            f"min_quote_amount_int={min_quote_amount_int}, base_amount_int={base_amount_int}"
+            f"Sizing: symbol={SYMBOL}, margin=${usd_margin}, notional=${usd_notional}, base_amount_int={base_amount_int}, entry_estimate={entry_estimate}"
         )
 
         # Try to set leverage (best-effort) — normalize margin_mode to proper enum/int
@@ -575,7 +563,7 @@ async def main():
             base_amount=base_amount_int,
             trigger_price=sl_trigger,
             price=sl_trigger,
-            is_ask=IS_ASK,
+            is_ask=not IS_ASK,
         )
         print("Create SL Limit Order:", tx_resp, tx_hash, err)
 
