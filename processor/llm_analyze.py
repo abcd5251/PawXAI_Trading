@@ -1,7 +1,7 @@
 import json
 from typing import Any, Dict, Optional
 
-from models.model import OpenAIModel
+from models.gemini_model import GeminiModel
 from prompts.extractor import extractor_prompt
 
 

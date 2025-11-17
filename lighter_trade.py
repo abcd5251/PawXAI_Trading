@@ -18,12 +18,12 @@ ACCOUNT_INDEX = int(os.getenv("LIGHTER_ACCOUNT_INDEX", "0"))
 API_KEY_INDEX = int(os.getenv("LIGHTER_API_KEY_INDEX", "2"))
 
 # Trading configuration
-SYMBOL = os.getenv("LIGHTER_SYMBOL", "SUI").upper()
+SYMBOL = os.getenv("LIGHTER_SYMBOL", "SOL").upper()
 INPUT_AMOUNT = float(os.getenv("LIGHTER_INPUT_AMOUNT", "10"))  # USD margin
 IS_ASK = os.getenv("LIGHTER_IS_ASK", "false").strip().lower() == "true"  # False=BUY(long), True=SELL(short)
 TP_PCT = float(os.getenv("LIGHTER_TP_PCT", "0.01"))
 SL_PCT = float(os.getenv("LIGHTER_SL_PCT", "0.01"))
-LEVERAGE = float(os.getenv("LIGHTER_LEVERAGE", "3"))
+LEVERAGE = float(os.getenv("LIGHTER_LEVERAGE", "5"))
 MARGIN_MODE = os.getenv("LIGHTER_MARGIN_MODE", "cross")  # cross | isolated
 
 
