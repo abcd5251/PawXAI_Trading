@@ -20,3 +20,8 @@ python3 --version
 ```bash
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
+
+# Search for account index
+```bash
+curl "https://mainnet.zklighter.elliot.ai/api/v1/accountsByL1Address?l1_address=Your_L1_Address"
+```
