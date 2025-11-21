@@ -1,8 +1,7 @@
 import os
 import google.generativeai as genai
 from dotenv import load_dotenv
-from utils.helper_functions import num_tokens_from_string, extract_data
-from utils.google_search import get_search_result
+from utils.helper_functions import num_tokens_from_string
 
 load_dotenv()
 

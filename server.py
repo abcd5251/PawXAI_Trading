@@ -1,74 +1,42 @@
 # ingest_api.py
-import json 
+import json
 import os
 import asyncio
 from contextlib import asynccontextmanager
 
 from utils.constants import KOL_LIST
 
-from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi import FastAPI
 import aiohttp
 import uvicorn
-import httpx
 from processor.llm_analyze import analyze_description
 from bot import (
-    notify_ingest_analysis,
-    notify_ingest_source,
     notify_ingest_source_async,
     notify_ingest_analysis_async,
 )
-from listener import MessageListener
 
 
 # Use FastAPI lifespan to manage startup/shutdown
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize shared state
-    app.state.listener_client = None
-    app.state.listener_task = None
     # Track last processed tweet id per screen_name to avoid re-analyzing
     app.state.last_tweet_ids = {}
 
-    token = os.getenv("DISCORD_TOKEN")
-    if not token:
-        print("[lifespan] DISCORD_TOKEN not set. Discord listener will not start.")
-    else:
-        client = MessageListener()
-        app.state.listener_client = client
-        # Run the discord client concurrently within the same event loop
-        app.state.listener_task = asyncio.create_task(client.start(token))
-        print("[lifespan] Discord listener started.")
-
-    # Start Twitter WS worker
+    # Start Twitter WS worker only (Discord removed)
     app.state.twitter_ws_task = asyncio.create_task(twitter_ws_worker(app))
-    print("[lifespan] Twitter WS listener started.")
 
     # Yield control to run the app
     try:
         yield
     finally:
-        # Cleanly shutdown resources
-        client = getattr(app.state, "listener_client", None)
-        task = getattr(app.state, "listener_task", None)
+        # Cleanly shutdown WS worker
         twitter_task = getattr(app.state, "twitter_ws_task", None)
-        if client:
-            try:
-                await client.close()
-            except Exception as e:
-                print(f"[lifespan] Error closing listener client: {e}")
-        if task:
-            try:
-                await asyncio.wait_for(task, timeout=5)
-            except Exception:
-                # Task may already be done or cancelled; ignore
-                pass
         if twitter_task:
             try:
                 twitter_task.cancel()
                 await asyncio.wait_for(twitter_task, timeout=5)
             except Exception:
                 pass
-        print("[lifespan] Discord listener stopped.")
 
 
 app = FastAPI(lifespan=lifespan)
@@ -143,19 +111,20 @@ async def _process_twitter_payload(app: FastAPI, payload: dict):
                 pass
 
     if text_to_analyze:
-        # 1) Send source notification immediately via event-loop task
-        asyncio.create_task(notify_ingest_source_async(filtered))
+        # 1) Send source notification to Telegram
+        source_result = await notify_ingest_source_async(filtered)
 
         # 2) Offload analysis to thread executor to keep loop responsive
         loop = asyncio.get_running_loop()
         analysis = await loop.run_in_executor(None, analyze_description, text_to_analyze)
         payload_out = {"source": filtered, "analysis": analysis}
         print(json.dumps(payload_out, ensure_ascii=False, indent=2))
-        # Schedule analysis notification asynchronously
-        asyncio.create_task(notify_ingest_analysis_async(analysis, filtered))
 
-        # 3) Return HTTP-like response dict
-        return {"ok": True, "data": analysis, "source": filtered}
+        # 3) Send analysis notification to Telegram
+        analysis_result = await notify_ingest_analysis_async(analysis, filtered)
+
+        # Return result-like dict for observability (used by WS worker logging)
+        return {"ok": True, "data": analysis, "source": filtered, "telegram": {"source": source_result, "analysis": analysis_result}}
 
     return {"ok": True, "data": None}
 
@@ -170,16 +139,23 @@ async def twitter_ws_worker(app: FastAPI):
     print(KOL_LIST)
     usernames = [u.strip() for u in usernames_env.split(",") if u.strip()]
 
+    # Initialize ws status tracking if missing
+    if not hasattr(app.state, "ws_status"):
+        app.state.ws_status = {"connected": False, "last_error": None, "subscribed": []}
+
     async with aiohttp.ClientSession() as session:
         while True:
             try:
                 async with session.ws_connect(url, heartbeat=30) as ws:
+                    app.state.ws_status["connected"] = True
+                    app.state.ws_status["last_error"] = None
                     # Subscribe all usernames
                     for u in usernames:
                         await ws.send_str(
                             json.dumps({"type": "subscribe", "twitterUsername": u})
                         )
                     print(f"[twitter-ws] subscribed: {', '.join(usernames)}")
+                    app.state.ws_status["subscribed"] = usernames
 
                     # Gate analysis to only start after N seconds from connection
                     loop = asyncio.get_running_loop()
@@ -222,84 +198,27 @@ async def twitter_ws_worker(app: FastAPI):
                                 )
                             except Exception:
                                 pass
+                        # Mark disconnected when leaving ws context
+                        app.state.ws_status["connected"] = False
             except asyncio.CancelledError:
                 # Task cancelled during shutdown
+                app.state.ws_status["connected"] = False
+                app.state.ws_status["last_error"] = "cancelled"
                 break
             except Exception as e:
                 print(f"[twitter-ws] connection error: {e}")
+                app.state.ws_status["connected"] = False
+                app.state.ws_status["last_error"] = str(e)
                 await asyncio.sleep(5)
 
+@app.get("/healthz")
+async def healthz():
+    return {"ok": True}
 
-# @app.post("/ingest")
-# async def ingest(req: Request, background_tasks: BackgroundTasks):
-#     data = await req.json()
-#     embeds = data.get("embeds") or []
-
-#     filtered = None
-#     analysis = None
-#     text_to_analyze = None
-
-#     # Prefer embed description if available
-#     for e in embeds:
-#         author = e.get("author") or {}
-#         name = author.get("name")
-#         desc = e.get("description")
-#         if desc and str(desc).strip():
-#             filtered = {
-#                 "author": {
-#                     "name": name,
-#                     "url": _norm(author.get("url")),
-#                 },
-#                 "timestamp": e.get("timestamp"),
-#                 "description": desc,
-#                 "url": _norm(e.get("url")),
-#                 "title": e.get("title"),
-#             }
-#             text_to_analyze = desc
-#             break
-
-#     # Fallback to plain message content if no usable embed description
-#     if not text_to_analyze:
-#         content = data.get("content")
-#         if content and str(content).strip():
-#             filtered = filtered or {
-#                 "author": {"name": data.get("author_name"), "url": None},
-#                 "timestamp": data.get("created_at"),
-#                 "description": content,
-#                 "url": data.get("jump_url"),
-#                 "title": None,
-#             }
-#             text_to_analyze = content
-
-#     # Only notify and analyze when we have actual text
-#     if text_to_analyze:
-#         # 1) Send source notification immediately via event-loop task
-#         asyncio.create_task(notify_ingest_source_async(filtered))
-
-#         # 2) Offload analysis to thread executor to keep loop responsive
-#         loop = asyncio.get_running_loop()
-#         analysis = await loop.run_in_executor(None, analyze_description, text_to_analyze)
-#         payload = {"source": filtered, "analysis": analysis}
-#         print(json.dumps(payload, ensure_ascii=False, indent=2))
-#         # Schedule analysis notification asynchronously
-#         asyncio.create_task(notify_ingest_analysis_async(analysis, filtered))
-
-#         # 3) Return HTTP with analysis and filtered source
-#         return {"ok": True, "data": analysis, "source": filtered}
-
-#     # No message content; do not notify
-#     return {"ok": True, "data": None}
-
-
-@app.post("/ingest/twitter")
-async def ingest_twitter(req: Request):
-    payload = await req.json()
-    # Delegate to shared processor which gates analysis to new tweets only
-
-    result = await _process_twitter_payload(app, payload)
-
-    return result
-
+@app.get("/ws/status")
+async def ws_status():
+    status = getattr(app.state, "ws_status", {"connected": False, "last_error": None, "subscribed": []})
+    return {"ok": True, "ws": status}
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))

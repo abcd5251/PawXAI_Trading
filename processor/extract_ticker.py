@@ -25,14 +25,3 @@ def extract_ticker(text: str) -> dict:
             seen.add(t)
             found.append(t)
     return {"has_ticker": bool(found), "ticker": found}
-
-
-if __name__ == "__main__":
-    string_text = """
-早上又一個超噁心的破底翻，翻了4次才翻上來，但我沒太大興趣了，這次真的有被噁心到
-
-Flip long條件：
-1）Overall liq做空轉負時做空難度上升
-2）reclaim 105k
-    """
-    print(extract_ticker(string_text))

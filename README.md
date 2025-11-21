@@ -25,3 +25,10 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 ```bash
 curl "https://mainnet.zklighter.elliot.ai/api/v1/accountsByL1Address?l1_address=Your_L1_Address"
 ```
+
+# For Discord Server
+Move files in `discord` folder into root folder
+```bash
+python discord_server.py
+```
+
