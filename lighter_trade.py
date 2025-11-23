@@ -18,7 +18,7 @@ ACCOUNT_INDEX = int(os.getenv("LIGHTER_ACCOUNT_INDEX", "0"))
 API_KEY_INDEX = int(os.getenv("LIGHTER_API_KEY_INDEX", "2"))
 
 # Trading configuration
-SYMBOL = os.getenv("LIGHTER_SYMBOL", "SOL").upper()
+SYMBOL = os.getenv("LIGHTER_SYMBOL", "POPCAT").upper()
 INPUT_AMOUNT = float(os.getenv("LIGHTER_INPUT_AMOUNT", "10"))  # USD margin
 IS_ASK = False  # False=BUY(long), True=SELL(short)
 TP_PCT = float(os.getenv("LIGHTER_TP_PCT", "0.01"))
@@ -49,6 +49,7 @@ def _symbol_to_external_ids(symbol: str):
         "LTC": "litecoin",
         "BTC": "bitcoin",
         "ETH": "ethereum",
+        "POPCAT": "popcat",
     }
     binance_symbol = f"{sym}USDT"
     okx_inst_id = f"{sym}-USDT"
