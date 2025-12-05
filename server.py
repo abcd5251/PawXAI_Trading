@@ -48,6 +48,28 @@ def _norm(value):
     return value.strip().strip("`").strip()
 
 
+async def _send_telegram_html_async(text: str) -> dict:
+    """Send preformatted HTML text to Telegram (parse_mode=HTML)."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        return {"ok": False, "error": "Missing TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID"}
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "disable_web_page_preview": True,
+        "parse_mode": "HTML",
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload) as resp:
+                data = await resp.json()
+                return {"ok": True, "result": data}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 # --- Shared Twitter ingest logic (used by API and WS worker) ---
 async def _process_twitter_payload(app: FastAPI, payload: dict):
     d = payload.get("data") or {}
@@ -120,9 +142,14 @@ async def _process_twitter_payload(app: FastAPI, payload: dict):
         payload_out = {"source": filtered, "analysis": analysis}
         print(json.dumps(payload_out, ensure_ascii=False, indent=2))
 
-        # 3) Send analysis notification to Telegram
-        analysis_result = await notify_ingest_analysis_async(analysis, filtered)
-
+        # 3) Send analysis notification to Telegram using new analyzer output if available
+        telegram_text = (analysis or {}).get("telegram_text")
+        if telegram_text:
+            analysis_result = await _send_telegram_html_async(telegram_text)
+        else:
+            # Fallback to legacy formatter
+            analysis_result = await notify_ingest_analysis_async(analysis, filtered)
+        print("result", analysis_result)
         # Return result-like dict for observability (used by WS worker logging)
         return {"ok": True, "data": analysis, "source": filtered, "telegram": {"source": source_result, "analysis": analysis_result}}
 

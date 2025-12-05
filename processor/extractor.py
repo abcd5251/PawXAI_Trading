@@ -15,8 +15,3 @@ def extract_ticker(text: str) -> dict:
             seen.add(t)
             found.append(t)
     return {"has_ticker": bool(found), "ticker": found}
-
-if __name__ == "__main__":
-    string_text = "gogo DYNA LINK really good !!"
-    ticker = extract_ticker(string_text)
-    print(ticker)
