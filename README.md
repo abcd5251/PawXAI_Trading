@@ -21,14 +21,19 @@ pip install -r requirements.txt
 ```
 
 # Environment Setup
+Ensure the following files are located in the project root folder:
 
-Ensure that the following scripts are located in the project root folder:
+- `buy_spot.py`
+- `lighter_trade.py`
+- `run_all.sh`
 
-```buy_spot.py```
+The default demo trades `$POPCAT` on Perp and Spot.
+To change the asset or strategy, edit `buy_spot.py` and `lighter_trade.py`.
 
-```lighter_trade.py```
-
-```run_all.sh```
+# Execution
+```bash
+uvicorn server:app --host 0.0.0.0 --port 8000
+```
 
 # Search for account index
 ```bash
@@ -40,4 +45,3 @@ Move files in `discord` folder into root folder
 ```bash
 python discord_server.py
 ```
-
