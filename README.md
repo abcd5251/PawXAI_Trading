@@ -1,6 +1,5 @@
 # PawXAI_Trading
-
-
+An automated Telegram trading bot that watches the latest tweets from specified Twitter accounts and executes trades based on predefined signals. When a tweet meets a sentiment of the specific requirement. The bot can place spot trades through Jupiter or open/close perpetual positions on Lighter.
 
 # Specific Python version
 Change path
@@ -16,10 +15,20 @@ which python3
 python3 --version       
 ```
 
-# Execution
+# Install dependencies
 ```bash
-uvicorn server:app --host 0.0.0.0 --port 8000
+pip install -r requirements.txt
 ```
+
+# Environment Setup
+
+Ensure that the following scripts are located in the project root folder:
+
+```buy_spot.py```
+
+```lighter_trade.py```
+
+```run_all.sh```
 
 # Search for account index
 ```bash
